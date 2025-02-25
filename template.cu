@@ -756,14 +756,15 @@ gemm_nt(
 template <class Alpha, class Beta>
 static
 void
-gemm_tn(int m, int n, int k,
-				Alpha alpha,
-				float const* A, int ldA,
-				float const* B, int ldB,
-				Beta beta,
-				float      * C, int ldC,
-				cudaStream_t stream = 0)
-{
+gemm_tn(
+	int m, int n, int k,
+	Alpha alpha,
+	float const* A, int ldA,
+	float const* B, int ldB,
+	Beta beta,
+	float      * C, int ldC,
+	cudaStream_t stream = 0
+) {
 	using namespace cute;
 
 	// Define shapes (dynamic)
@@ -784,20 +785,27 @@ gemm_tn(int m, int n, int k,
 	auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
 	auto bP = Int<3>{};  // Pipeline
 
-		auto swizzle_atom = composition(
-				Swizzle<3,2,3>{},
-				Layout<
-						Shape <_8,_32>,
-						Stride<_32, _1>
-				>{}
-		);
+	// auto swizzle_atom = composition(
+	// 	Swizzle<3,2,3>{},
+	// 	Layout<
+	// 		Shape <_8,_32>,
+	// 		Stride<_32, _1>
+	// 	>{}
+	// );
+
+	auto swizzle_atom = composition(
+	  Swizzle<@1@,@2@,@3@>{},
+	  Layout<Shape <_@4@,Shape <_@5@, _@6@>>,
+	          Stride<_@7@,Stride<_1,_@8@>>
+	  >{}
+	);
 
 	// auto swizzle_atom = composition(
-	//   Swizzle<@1@,@2@,@3@>{},
-	//   Layout<Shape <_@4@,Shape <_@5@, _@6@>>,
-	//           Stride<_@7@,Stride<_1,_@8@>>
-	//   >{}
-	// );
+	// 	Swizzle<3,2,3>{},
+	// 	Layout<Shape <_8,Shape <_4, _8>>,
+	// 			Stride<_4,Stride<_1,_32>>
+	// 	>{}
+	//   );
 
 	TiledCopy copyA = make_tiled_copy(
 		Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, tfloat32_t>{},
@@ -815,13 +823,22 @@ gemm_tn(int m, int n, int k,
 		>{},
 		Layout<Shape< _1,_4>>{}
 	);
+
 	TiledMMA mmaC = make_tiled_mma(
 		SM80_16x8x8_F32TF32TF32F32_TN{},
 		Layout<
 			Shape<_2,_2>
 		>{},
-		Tile<_32,_32,_8>{}
+		Tile<_32,_32,_@9@>{}
 	);
+
+	// TiledMMA mmaC = make_tiled_mma(
+	// 	SM80_16x8x8_F32TF32TF32F32_TN{},
+	// 	Layout<
+	// 		Shape<_2,_2>
+	// 	>{},
+	// 	Tile<_32,_32,_8>{}
+	// );
 
 	Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t> s2r_atom_A;
 	Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t> s2r_atom_B;
@@ -841,13 +858,13 @@ gemm_tn(int m, int n, int k,
 	);
 	#if 1
 	auto kernel_fptr = 
-				gemm_device_s2r<
-						decltype(prob_shape), decltype(cta_tiler),
-						float, decltype(dA), decltype(sA), decltype(copyA), decltype(s2r_atom_A),
-						float, decltype(dB), decltype(sB), decltype(copyB), decltype(s2r_atom_B),
-						float, decltype(dC), decltype(sC), decltype(mmaC),
-						decltype(alpha), decltype(beta)
-				>;
+		gemm_device_s2r<
+			decltype(prob_shape), decltype(cta_tiler),
+			float, decltype(dA), decltype(sA), decltype(copyA), decltype(s2r_atom_A),
+			float, decltype(dB), decltype(sB), decltype(copyB), decltype(s2r_atom_B),
+			float, decltype(dC), decltype(sC), decltype(mmaC),
+			decltype(alpha), decltype(beta)
+		>;
 
 	cudaFuncSetAttribute(
 		kernel_fptr,
@@ -862,11 +879,11 @@ gemm_tn(int m, int n, int k,
 	);
 
 	kernel_fptr<<<dimGrid, dimBlock, smem_size, stream>>>(
-			prob_shape, cta_tiler,
-			A, dA, sA, copyA, s2r_atom_A,
-			B, dB, sB, copyB, s2r_atom_B,
-			C, dC, sC, mmaC,
-			alpha, beta
+		prob_shape, cta_tiler,
+		A, dA, sA, copyA, s2r_atom_A,
+		B, dB, sB, copyB, s2r_atom_B,
+		C, dC, sC, mmaC,
+		alpha, beta
 	);
 	#endif
 
@@ -919,11 +936,11 @@ main(
 	if (argc >= 4)
 		sscanf(argv[3], "%d", &K);
 
-	char transA = 'N';
+	char transA = 'T';
 	if (argc >= 5)
 		sscanf(argv[4], "%c", &transA);
 
-	char transB = 'T';
+	char transB = 'N';
 	if (argc >= 6)
 		sscanf(argv[5], "%c", &transB);
 
@@ -970,15 +987,15 @@ main(
 		assert(false);
 	}
 
-	// assert(transA == 'T' && transB == 'N');
+	assert(transA == 'T' && transB == 'N');
 
 	gemm_tn(
-			M, N, K,
-			alpha,
-			d_A.data().get(), ldA,
-			d_B.data().get(), ldB,
-			beta,
-			d_C_cute.data().get(), ldC
+		M, N, K,
+		alpha,
+		d_A.data().get(), ldA,
+		d_B.data().get(), ldB,
+		beta,
+		d_C_cute.data().get(), ldC
 	);
 	
 	CUTE_CHECK_LAST();
@@ -1002,8 +1019,6 @@ main(
 
 	thrust::host_vector<T> cublas_result = d_C_cublas;
 
-	bool raise = false;
-
 	for (int j = 0; j < M*N; ++j) {
 		T cute_v = cute_result[j];
 		T cublas_v = cublas_result[j];
@@ -1011,32 +1026,32 @@ main(
 		double diff = fabs((double)cute_v - (double)cublas_v);
 		if (diff > 1e-3) {
 				printf("(%d) difference: %f, %f\n", j, cute_v, cublas_v);
-				raise = true;
+				exit(EXIT_FAILURE);
 			}
 		}
 
-		printf("cublas:\n");
+		// printf("cublas:\n");
 		
-		for (int row = 0; row < M && row < 4; row++) {
-			for (int col = 0; col < N && col < 4; col++) {
-				printf("%f, ", cublas_result[col * M + row]);
-			}
-			printf("\n");
-		}
+		// for (int row = 0; row < M && row < 4; row++) {
+		// 	for (int col = 0; col < N && col < 4; col++) {
+		// 		printf("%f, ", cublas_result[col * M + row]);
+		// 	}
+		// 	printf("\n");
+		// }
 
-		printf("cute:\n");
+		// printf("cute:\n");
 		
-		for (int row = 0; row < M && row < 4; row++) {
-			for (int col = 0; col < N && col < 4; col++) {
-				printf("%f, ", cute_result[col * M + row]);
-			}
-			printf("\n");
-		}
+		// for (int row = 0; row < M && row < 4; row++) {
+		// 	for (int col = 0; col < N && col < 4; col++) {
+		// 		printf("%f, ", cute_result[col * M + row]);
+		// 	}
+		// 	printf("\n");
+		// }
 
 
-		if (raise) {
-			exit(EXIT_FAILURE);
-		}
+		// if (raise) {
+		// 	exit(EXIT_FAILURE);
+		// }
 		
 		exit(EXIT_SUCCESS);
 }
