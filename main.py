@@ -141,7 +141,7 @@ combinations = param_combs.get_filtered_combinations()
 # combinations = list(itertools.product(swizzle_0s, swizzle_1s, swizzle_2s, shape_Xs, shape_Ys, shape_Zs, stride_Xs, stride_Zs, tile_ks))
 # print(combinations[:8])
 print(len(combinations))
-exit()
+# exit()
 
 # Process combinations in parallel
 with ProcessPoolExecutor() as executor:
